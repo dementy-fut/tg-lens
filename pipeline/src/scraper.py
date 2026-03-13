@@ -1,8 +1,13 @@
 import logging
 from datetime import datetime, timezone
 from telethon import TelegramClient
+from telethon.errors import FloodWaitError
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_MAX_POSTS = 50
+DEFAULT_MAX_COMMENTS_PER_POST = 10
+MAX_FLOOD_WAITS = 3
 
 
 class TelegramScraper:
@@ -80,23 +85,42 @@ class TelegramScraper:
         }
 
     async def scrape_channel(self, channel_id_or_username, db_channel_id: str,
-                              channel_username: str, since: datetime = None) -> tuple[list, list]:
+                              channel_username: str, since: datetime = None,
+                              max_posts: int = DEFAULT_MAX_POSTS,
+                              max_comments_per_post: int = DEFAULT_MAX_COMMENTS_PER_POST,
+                              skip_comments: bool = False) -> tuple[list, list]:
         """Scrape posts and comments from a channel since a given datetime."""
         posts = []
         comments = []
+        flood_wait_count = 0
 
-        async for msg in self.client.iter_messages(channel_id_or_username):
+        async for msg in self.client.iter_messages(channel_id_or_username, limit=max_posts):
             if since and msg.date < since:
                 break
 
             post_dict = self.parse_message(msg, channel_id=db_channel_id, channel_username=channel_username)
             posts.append(post_dict)
 
+            if skip_comments or flood_wait_count >= MAX_FLOOD_WAITS:
+                continue
+
             try:
-                async for reply in self.client.iter_messages(channel_id_or_username, reply_to=msg.id):
+                comment_count = 0
+                async for reply in self.client.iter_messages(
+                    channel_id_or_username, reply_to=msg.id, limit=max_comments_per_post
+                ):
                     comment_dict = self.parse_comment(reply, post_id=None)
                     comment_dict["_parent_telegram_msg_id"] = msg.id
                     comments.append(comment_dict)
+                    comment_count += 1
+            except FloodWaitError as e:
+                flood_wait_count += 1
+                logger.warning(
+                    f"FloodWait {e.seconds}s on comments for msg {msg.id} "
+                    f"({flood_wait_count}/{MAX_FLOOD_WAITS})"
+                )
+                if flood_wait_count >= MAX_FLOOD_WAITS:
+                    logger.warning("Too many flood waits — skipping comments for remaining posts")
             except Exception as e:
                 logger.debug(f"No comments for msg {msg.id}: {e}")
 
