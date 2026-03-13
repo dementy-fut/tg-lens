@@ -1,65 +1,83 @@
-import Image from "next/image";
+import { createServerClient } from "@/lib/supabase-server";
+import { ChannelCard } from "@/components/channel-card";
+import { Channel, ChannelSummary } from "@/lib/types";
+import Link from "next/link";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+async function getChannels(): Promise<Channel[]> {
+  const supabase = createServerClient();
+  const { data } = await supabase
+    .from("channels")
+    .select("*")
+    .eq("is_active", true)
+    .order("category")
+    .order("title");
+  return data || [];
+}
+
+async function getLatestDigests(): Promise<Record<string, ChannelSummary>> {
+  const supabase = createServerClient();
+  const { data } = await supabase
+    .from("channel_summaries")
+    .select("*")
+    .eq("status", "done")
+    .order("period_end", { ascending: false });
+
+  const map: Record<string, ChannelSummary> = {};
+  for (const s of data || []) {
+    if (!map[s.channel_id]) {
+      map[s.channel_id] = s;
+    }
+  }
+  return map;
+}
+
+export default async function Dashboard() {
+  const [channels, digests] = await Promise.all([getChannels(), getLatestDigests()]);
+
+  const grouped: Record<string, Channel[]> = {};
+  for (const ch of channels) {
+    const cat = ch.category || "other";
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(ch);
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="max-w-5xl mx-auto p-6">
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-2xl font-bold">TG Lens</h1>
+        <div className="flex gap-2">
+          <Link href="/search" className="text-sm text-gray-600 hover:text-gray-900 px-3 py-2">Search</Link>
+          <Link href="/settings" className="text-sm text-gray-600 hover:text-gray-900 px-3 py-2">Settings</Link>
+          <form action="/api/trigger-scrape" method="POST">
+            <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+              Scrape Now
+            </button>
+          </form>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </div>
+
+      {Object.keys(grouped).length === 0 && (
+        <div className="text-center py-12 text-gray-500">
+          <p>No channels yet. <Link href="/settings" className="text-blue-600 hover:underline">Add channels</Link> to get started.</p>
         </div>
-      </main>
-    </div>
+      )}
+
+      {Object.entries(grouped).map(([category, chs]) => (
+        <section key={category} className="mb-8">
+          <h2 className="text-lg font-semibold text-gray-700 mb-3 capitalize">{category}</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {chs.map((ch) => (
+              <ChannelCard
+                key={ch.id}
+                channel={ch}
+                latestSummary={digests[ch.id]?.summary?.slice(0, 200)}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+    </main>
   );
 }
