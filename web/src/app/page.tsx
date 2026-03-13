@@ -2,6 +2,7 @@ import { createServerClient } from "@/lib/supabase-server";
 import { ChannelCard } from "@/components/channel-card";
 import { Channel, ChannelSummary } from "@/lib/types";
 import Link from "next/link";
+import { ScrapeButton } from "@/components/scrape-button";
 
 export const dynamic = "force-dynamic";
 
@@ -50,11 +51,7 @@ export default async function Dashboard() {
         <div className="flex gap-2">
           <Link href="/search" className="text-sm text-gray-600 hover:text-gray-900 px-3 py-2">Search</Link>
           <Link href="/settings" className="text-sm text-gray-600 hover:text-gray-900 px-3 py-2">Settings</Link>
-          <form action="/api/trigger-scrape" method="POST">
-            <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-              Scrape Now
-            </button>
-          </form>
+          <ScrapeButton />
         </div>
       </div>
 

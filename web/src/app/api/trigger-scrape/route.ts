@@ -21,7 +21,7 @@ export async function POST() {
   );
 
   if (res.ok || res.status === 204) {
-    return NextResponse.redirect(new URL("/", process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"));
+    return NextResponse.json({ ok: true });
   }
 
   const error = await res.text();
